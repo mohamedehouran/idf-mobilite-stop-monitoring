@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "idf-mobilite-stop-monitoring"
+version = "0.1.0"
+description = "IDF Stop Monitoring is a powerful Python-based solution for retrieving and processing public transit arrival time data from the IDF Mobilité API"
+authors = ["Mohamed Ehouran <mohamedehouran@gmail.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.12"
+python-dotenv = "^1.0.1"
+db-dtypes = "^1.4.0"
+numpy = "^2.2.2"
+pandas = "^2.2.3"
+pyarrow = "^19.0.0"
+requests = "^2.32.3"
+thefuzz = "^0.22.1"
+click = "^8.1.8"
+pre-commit = "^4.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "8.3.4"
+ruff = "0.9.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+

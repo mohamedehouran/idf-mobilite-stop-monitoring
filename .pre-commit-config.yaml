@@ -1,0 +1,13 @@
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.11.6
+  hooks:
+    - id: ruff
+      args: [ --fix ]
+      always_run: true
+      pass_filenames: false
+      verbose: true
+    - id: ruff-format
+      always_run: true
+      pass_filenames: false
+      verbose: true
