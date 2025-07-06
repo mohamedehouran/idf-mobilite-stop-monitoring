@@ -2,12 +2,8 @@ import os
 from enum import Enum
 from typing import Dict
 from pathlib import Path
-from dotenv import load_dotenv
 from dataclasses import dataclass
 from functools import cached_property
-
-
-load_dotenv()
 
 
 class EnvironmentVars(Enum):
@@ -35,7 +31,7 @@ class EnvironmentManager:
         """
         try:
             key_val = key.value
-            env_var = os.getenv(key_val, default)
+            env_var = os.environ.get(key_val, default)
             if env_var is None:
                 raise ValueError(f"Environment variable '{key_val}' not found")
             return env_var
@@ -50,8 +46,7 @@ class Directories(Enum):
     Directories used by the application.
     """
 
-    RAW_DATA = "data/raw"
-    PROCESSED_DATA = "data/processed"
+    DATA = "data"
     CONFIG = "src/config"
     LOGS = "logs"
 

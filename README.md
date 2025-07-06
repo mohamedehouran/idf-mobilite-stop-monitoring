@@ -62,12 +62,15 @@ idf-stop-monitoring/
 │   ├── utils/                            # Utility functions
 │   │   ├── data_retriever.py             # Core data retrieval logic
 │   │   └── helpers.py                    # General utilities
-│   └── main.py                           # Main application script
+│   └── api.py                            # Main entry point of the FastAPI application
 ├── .env.example                          # Environment variables template
 ├── .gitignore                            # Git ignore file
-├── poetry.lock                           # Dependency lock file
-├── pyproject.toml                        # Project configuration with Poetry
-└── README.md
+├── .pre-commit-config.yaml               # Pre-commit hooks configuration
+├── .python-version                       # Python version specification
+├── LICENSE                               # License file
+├── pyproject.toml                        # Project configuration and dependencies
+├── README.md                             # Project documentation
+└── uv.lock                               # Dependency lock file
 ```
 
 ### Quick Start Guide
@@ -77,31 +80,30 @@ idf-stop-monitoring/
    cd idf-mobilite-stop-monitoring
    ```
 2. **Configure environment variables** :
-   ```bash
-   cp .env.example .env
-   # Edit .env with your settings
-   ```
-3. **Create and activate a virtual environment** :
-   ```bash
-   python -m venv .venv
+```bash
+cp .env.example .env
+# Edit .env with your settings
+```
+3. **Create and activate a virtual environment** : 
+```bash
+pip install --upgrade uv
+uv venv
 
-   # Activate the environment
-   .venv\Scripts\Activate.ps1    # For Windows
-   source .venv/bin/activate     # For macOS/Linux
-   ```
-4. **Install dependencies** :
-   ```bash
-   pip install --upgrade poetry
-   poetry install
-   ```
-5. **Run the application** :
-   ```bash
-   poetry run python -m src.main
-   ```
-   - Follow the interactive command-line prompts generated to validate required parameters
-6. **Retrieve the output files** :
-   - Once the process is complete, the processed results will be saved in the `data/processed/` directory
-   - Raw responses are saved as JSON files in `data/raw/`
+# Activate the environment
+.venv\Scripts\activate        # For Windows
+source .venv/bin/activate     # For macOS/Linux
+
+# Install dependencies
+uv sync
+```
+4. **Run the application** :
+```bash
+uv run uvicorn src.api:app --reload
+```
+- This command starts the FastAPI application using Uvicorn
+- Open your browser and go to `http://localhost:8000/docs` to access the interactive API documentation
+5. **Specify the towns** : Use the interactive API documentation to enter a comma-separated list of towns you want to process
+6. **Retrieve the output file** : Once the process is complete, the geocoded results will be saved in the `data/` directory. You can also download the results as a CSV file through the API endpoint
 
 ## ⚙️ Customization
 - **Adjust data processing parameters** in `.env` : Modify the `MAX_WORKERS` value to optimize performance based on your system's capabilities

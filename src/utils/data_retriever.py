@@ -1,18 +1,16 @@
-import json
+import time
 import requests
 import pandas as pd
 from enum import Enum
-from pathlib import Path
 from ast import literal_eval
 from functools import lru_cache
 from thefuzz import fuzz, process
 from dataclasses import dataclass, field
 from typing import Generator, Optional, Tuple, Dict, List, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from src.config.config_validator import validate_required_vars
 from src.config.logger import logger
-from src.config.stop_monitoring import StopMonitoringConfig
-from src.utils.helpers import catch_exceptions, FileUtils
+from src.config.stop_monitoring import StopMonitoringConfig, StopReferentialConfig
+from src.utils.helpers import catch_exceptions
 
 
 class StopReferentialColumn(Enum):
@@ -25,37 +23,16 @@ class StopReferentialColumn(Enum):
     TOWN = "arrtown"
 
 
-@dataclass
 class StopReferentialManager:
     """
-    Manage stop referentials for the monitoring system.
+    Responsible for managing the stop referential data, including reading, filtering, and iterating over stops.
     """
 
-    sm_config: StopMonitoringConfig
-    selected_towns: str
-    file_path: Path = field(init=False)
-
-    def __post_init__(self):
-        self.env_manager = self.sm_config.env_manager
-        self.selected_towns = (
-            self.selected_towns.split(",") if self.selected_towns else None
-        )
-
-        validate_required_vars(
-            {self.env_manager.variables.SELECTED_TOWNS.value: self.selected_towns}
-        )
-
-    @catch_exceptions
-    def _read_referential(self) -> pd.DataFrame:
-        """
-        Read the referential file and return it as DataFrame.
-        """
-        try:
-            with open(self.sm_config.referential_file_path) as file:
-                data = json.load(file)
-            return pd.DataFrame(data)
-        except Exception as e:
-            logger.error(f"Unexpected error occurred reading referential file : {e}")
+    def __init__(
+        self, config: StopReferentialConfig, sm_config: StopMonitoringConfig
+    ) -> None:
+        self.config = config
+        self.selected_towns = sm_config.selected_towns
 
     @catch_exceptions
     def _match_to_existing_towns(self, town: str, towns: List[str]) -> Optional[str]:
@@ -78,7 +55,7 @@ class StopReferentialManager:
                 logger.error("Matching failed : No town found with a reasonable score")
                 return None
         except Exception as e:
-            logger.error(f"Unexpected error occurred reading referential file : {e}")
+            logger.error(f"Unexpected error occurred matching to existing towns : {e}")
 
     @catch_exceptions
     def _filter_referential(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -124,7 +101,7 @@ class StopReferentialManager:
         Yield stop ID and name from the referential.
         """
         try:
-            df = self._read_referential()
+            df = self.config.load_referential()
             filtered_df = self._filter_referential(df)
 
             if not filtered_df.empty:
@@ -288,6 +265,49 @@ class StopMonitoringDataFormatter:
         return df
 
 
+@dataclass
+class StopMonitoringDataRetrieverResult:
+    """
+    Represents the result of the Stop Monitoring data retrieval process.
+    """
+
+    execution_time: float
+    processed_file_path: str
+    total_processed: str
+    total_successful: str
+    total_failed: str
+    success_rate: str = field(init=False)
+    failure_rate: str = field(init=False)
+    status: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.success_rate = self._compute_ratio(self.total_successful)
+        self.failure_rate = self._compute_ratio(self.total_failed)
+        self.status = self._get_status()
+
+    def _compute_ratio(self, value: str) -> str:
+        """
+        Compute the ratio of a given value over the total processed count.
+        """
+        return (
+            f"{(int(value) / int(self.total_processed) * 100):.2f}%"
+            if self.total_processed
+            else "0.00%"
+        )
+
+    def _get_status(self) -> str:
+        """
+        Determine the overall status based on the success rate.
+        """
+        return (
+            "SUCCESS"
+            if self.success_rate == "100%"
+            else "PARTIAL_SUCCESS"
+            if self.success_rate != "0.00%"
+            else "FAILED"
+        )
+
+
 class StopMonitoringDataRetriever:
     """
     Responsible for orchestrating the entire process of retrieving, processing, and saving data from the IDF Mobilité Stop Monitoring API.
@@ -295,15 +315,13 @@ class StopMonitoringDataRetriever:
 
     def __init__(
         self,
-        sr_manager: StopReferentialManager,
+        sm_config: StopMonitoringConfig,
         sm_data_formatter: StopMonitoringDataFormatter,
-        file_utils: FileUtils,
-    ):
-        self.sr_manager = sr_manager
-        self.sm_config = sr_manager.sm_config
-        self.sm_data_processor = sr_manager.sm_config.data_processor
+        sr_manager: StopReferentialManager,
+    ) -> None:
+        self.sm_config = sm_config
         self.sm_data_formatter = sm_data_formatter
-        self.file_utils = file_utils
+        self.sr_manager = sr_manager
 
     @catch_exceptions
     @lru_cache(maxsize=100)
@@ -323,38 +341,46 @@ class StopMonitoringDataRetriever:
         return response
 
     @catch_exceptions
+    def _save_processed_df(self, df: pd.DataFrame) -> None:
+        """
+        Saves the processed DataFrame to a CSV file, appending if the file already exists.
+        """
+        write_header = not self.sm_config.processed_file_path.exists()
+        df.to_csv(
+            self.sm_config.processed_file_path,
+            mode="a",
+            header=write_header,
+            index=False,
+        )
+
+    @catch_exceptions
     def _process_response(self, stop_point_name: str, response: Dict[str, Any]) -> bool:
         """
         Processes the response for a given stop point and saves the results.
         """
-        # Save raw file
-        self.file_utils.save_to_json(response, stop_point_name, is_raw=True)
-
         # Format response
         df = self.sm_data_formatter.format_response(stop_point_name, response)
         is_processed = not df.empty
 
         # Save processed file
         if is_processed:
-            self.file_utils.save_to_parquet(
-                df, self.sm_config.output_filename, to_append=True, clean_filename=False
-            )
+            self._save_processed_df(df)
 
         return is_processed
 
     @catch_exceptions
-    def _retrieve_and_process_responses(self) -> pd.DataFrame:
+    def execute_retrieval_workflow(self) -> pd.DataFrame:
         """
-        Retrieves and processes responses from multiple stop points in parallel.
+        Executes the retrieval workflow for stop monitoring data, processing each stop point in parallel.
         """
-        responses_processed = 0
+        total_processed = 0
+        total_successful = 0
+        time_start = time.time()
 
         logger.info(
-            f"Starting parallel retrieval with {self.sm_config.data_processor.max_workers} workers ..."
+            f"Starting stop monitoring retrieval for '{"', '".join(self.sm_config.selected_towns)}' ..."
         )
-        with ThreadPoolExecutor(
-            max_workers=self.sm_config.data_processor.max_workers
-        ) as executor:
+        with ThreadPoolExecutor(max_workers=self.sm_config.max_workers) as executor:
             futures = {
                 executor.submit(
                     self._fetch_stop_point_data, stop_point_id, stop_point_name
@@ -362,32 +388,31 @@ class StopMonitoringDataRetriever:
                 for stop_point_id, stop_point_name in self.sr_manager.iter_stops()
             }
 
-            requests = len(futures)
-
             for future in as_completed(futures):
                 stop_point_name = futures[future]
 
                 try:
                     response = future.result(timeout=30)
-                    responses_processed += self._process_response(
+                    total_processed += 1
+                    total_successful += self._process_response(
                         stop_point_name, response
                     )
 
                 except Exception as e:
                     logger.error(
-                        f"Unexpected error occurred while processing {stop_point_name} : {e}"
+                        f"Unexpected error occurred processing '{stop_point_name}' : {e}"
                     )
                     raise
 
-        logger.info(
-            f"Parallel retrieval completed : {requests} requests sent, {responses_processed} responses processed"
-        )
+        elapsed_time = time.time() - time_start
 
-    @catch_exceptions
-    def execute_retrieval_workflow(self) -> pd.DataFrame:
-        """
-        Executes the entire workflow for retrieving and processing arrival times.
-        """
-        logger.info("Executing stop monitoring data retrieval workflow ...")
-        self._retrieve_and_process_responses()
-        logger.info("Stop monitoring data retrieval workflow completed successfully")
+        logger.info(
+            f"Retrieval workflow completed in {elapsed_time:.2f} seconds : {total_processed} requests processed"
+        )
+        return StopMonitoringDataRetrieverResult(
+            execution_time=str(elapsed_time),
+            processed_file_path=str(self.sm_config.processed_file_path),
+            total_processed=str(total_processed),
+            total_successful=str(total_successful),
+            total_failed=str(total_processed - total_successful),
+        )
