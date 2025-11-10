@@ -1,7 +1,7 @@
 [project]
 name = "idf-mobilite-stop-monitoring"
 version = "0.1.0"
-description = "IDF Mobilité Stop Monitoring is a powerful Python-based solution for retrieving and processing public transit arrival time data from the IDF Mobilité API"
+description = "FastAPI-based IDF Mobilité Stop Monitoring is a powerful Python-based solution for retrieving and processing public transit arrival time data from the IDF Mobilité API"
 authors = [
   {name = "Mohamed Ehouran", email = "mohamedehouran@gmail.com"},
 ]

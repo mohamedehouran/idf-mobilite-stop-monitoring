@@ -98,7 +98,7 @@ uv sync
 ```
 4. **Run the application** :
 ```bash
-uv run uvicorn src.api:app --reload
+uv run python -m src
 ```
 - This command starts the FastAPI application using Uvicorn
 - Open your browser and go to `http://localhost:8000/docs` to access the interactive API documentation
